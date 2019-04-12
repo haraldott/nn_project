@@ -11,6 +11,7 @@ for dir_path, subdir_list, file_list in os.walk("."):
             sig, fs = librosa.load(full_file_name_with_path)
             spectrogram_dir_path = dir_path.replace("audio", "spectrogram")
             save_path = spectrogram_dir_path + "/" + file_name_without_ext + ".jpg"
+            pylab.figure(figsize=[0.6, 0.41])
             pylab.axis('off')
             pylab.axes([0., 0., 1., 1.], frameon=False, xticks=[], yticks=[])
             S = librosa.feature.melspectrogram(y=sig, sr=fs)
