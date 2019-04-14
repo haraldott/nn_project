@@ -13,8 +13,8 @@ tf.enable_eager_execution()
 # HYPERPARAMETERS
 BATCH_SIZE = 32
 
-
-data_root = pathlib.Path(sys.argv[1])
+working_dir = str(sys.argv[1])
+data_root = pathlib.Path(working_dir + "/data")
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 def load_files():
@@ -42,7 +42,7 @@ def load_files():
         return image
 
     def load_and_preprocess_image(path):
-        image = tf.read_file(str(path))
+        image = tf.read_file(path)
         return _preprocess_image(image)
 
     path_ds = tf.data.Dataset.from_tensor_slices(all_image_paths)
@@ -51,23 +51,17 @@ def load_files():
 
     label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(all_image_labels, tf.int64))
 
-    # image_label_ds = tf.data.Dataset.zip((image_ds, label_ds))
+    image_label_ds = tf.data.Dataset.zip((image_ds, label_ds))
 
-    return image_ds, label_ds, len(all_image_paths)
+    return image_label_ds, len(all_image_paths)
 
 def main():
 
-    image_ds, label_ds, len_images = load_files()
-    # ds = ds.repeat()
-    # ds = ds.batch(BATCH_SIZE)
-    # ds = ds.prefetch(buffer_size=AUTOTUNE)
+    ds, len_images = load_files()
+    ds = ds.repeat()
+    ds = ds.batch(BATCH_SIZE)
+    ds = ds.prefetch(buffer_size=AUTOTUNE)
 
-    # def change_range(image, label):
-    #     return 2 * image - 1, label
-    #
-    # keras_ds = ds.map(change_range)
-
-    print("len_images ", len_images)
     model = network.build_network()
     model.compile(optimizer=tf.train.AdamOptimizer(),
                   loss=tf.keras.losses.sparse_categorical_crossentropy,
@@ -76,41 +70,17 @@ def main():
 
     steps_per_epoch = int(tf.ceil(len_images / BATCH_SIZE).numpy())
 
-    #serialise
-    ds = image_ds.map(tf.serialize_tensor)
-    if not os.path.isfile('images.tfrec'):
-        tfrec = tf.data.experimental.TFRecordWriter('images.tfrec')
-        tfrec.write(ds)
-
-
-    RESTORE_TYPE = image_ds.output_types
-    RESTORE_SHAPE = image_ds.output_shapes
-
-    ds = tf.data.TFRecordDataset('images.tfrec')
-
-    def parse(x):
-        result = tf.parse_tensor(x, out_type=RESTORE_TYPE)
-        result = tf.reshape(result, RESTORE_SHAPE)
-        return result
-
-    ds = ds.map(parse, num_parallel_calls=AUTOTUNE)
-
-    ds = tf.data.Dataset.zip((ds, label_ds))
-    ds = ds.apply(
-        tf.data.experimental.shuffle_and_repeat(buffer_size=len_images))
-    ds = ds.batch(BATCH_SIZE).prefetch(AUTOTUNE)
-
-
+    print(len(model.trainable_variables))
     model.fit(ds, epochs=2, steps_per_epoch=steps_per_epoch)
-    scores = model.evaluate(ds, verbose=0)
+    scores = model.evaluate(ds, verbose=0, steps=BATCH_SIZE)
     print("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
 
     # serialize model to JSON
     model_json = model.to_json()
-    with open("model.json", "w") as json_file:
+    with open(working_dir + "model.json", "w") as json_file:
         json_file.write(model_json)
     # serialize weights to HDF5
-    model.save_weights("model.h5")
+    model.save_weights(working_dir + "model.h5")
     print("Saved model to disk")
 
 
