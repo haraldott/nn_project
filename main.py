@@ -3,97 +3,82 @@ from __future__ import absolute_import, division, print_function
 import tensorflow as tf
 import os
 import network
+import numpy as np
+import pathlib
+import random
 
 tf.logging.set_verbosity(tf.logging.INFO)
+tf.enable_eager_execution()
 
-#tf.enable_eager_execution() # TODO: check this
+# HYPERPARAMETERS
+BATCH_SIZE = 32
 
 
-# def preprocess_data(data, image_count):
-#     BATCH_SIZE = 32
-#
-#     # Setting a shuffle buffer size as large as the dataset ensures that the data is
-#     # completely shuffled.
-#     ds = data.shuffle(buffer_size=image_count)
-#     ds = ds.repeat()
-#     ds = ds.batch(BATCH_SIZE)
-#     # `prefetch` lets the dataset fetch batches, in the background while the model is training.
-#     ds = ds.prefetch(buffer_size=64)
-#     return ds
-
-def train_input_fn(features, labels):
-
-    def _parse_function(filename, label):
-        image_string = tf.read_file(filename)
-        image_decoded = tf.image.decode_jpeg(image_string)
-        return image_decoded, label
-
-    """An input function for training"""
-    # Convert the inputs to a Dataset.
-    dataset = tf.data.Dataset.from_tensor_slices((features, labels))
-
-    dataset = dataset.map(_parse_function)
-
-    # Shuffle, repeat, and batch the examples.
-    dataset = dataset.shuffle(1000).repeat()
-
-    # Return the dataset.
-    return dataset
-
-labels_list = ["BomagCompactor", "CAT305EExcavator", "CATC5KBulldozer",
-               "Hitachi50UExcavator", "JD50GExcavator1", "JD700JDozer"]
+data_root = pathlib.Path("./data")
+AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 def load_files():
 
-    fnames = []
-    lbls = []
-    # Reads an image from a file, decodes it into a dense tensor, and resizes it
-    # to a fixed shape.
+    # get all labels
+    label_names = sorted(item.name for item in data_root.glob('*/') if item.is_dir())
+    print(label_names)
 
+    # assign index to each label
+    label_to_index = dict((name, index) for index, name in enumerate(label_names))
+    print(label_to_index)
 
-    for dir_path, subdir_list, file_list in os.walk("./data"):
-        for fname in file_list:
-            if os.path.splitext(fname)[1] == ".jpg":
-                full_file_name_with_path = os.path.join(dir_path, fname)
-                fnames.append(full_file_name_with_path)
-                lbls.append(labels_list.index(os.path.dirname(dir_path).split("./data/",1)[1]))
+    # get all image paths
+    all_image_paths = list(data_root.glob('*/spectrogram/*'))
+    all_image_paths = [str(path) for path in all_image_paths]
 
-    # A vector of filenames.
-    filenames = tf.constant(fnames)
-    image_count = len(fnames)
+    # create a list of every file and its label index
+    all_image_labels = [label_to_index[pathlib.Path(path).parent.parent.name]
+                        for path in all_image_paths]
 
-    # `labels[i]` is the label for the image in `filenames[i].
-    labels = tf.constant(lbls)
+    def _preprocess_image(image):
+        image = tf.image.decode_jpeg(image, channels=3)
+        image = tf.image.resize_images(image, [192, 192])
+        image /= 255.0  # normalize to [0,1] range
+        return image
 
-    #dataset = tf.data.Dataset.from_tensor_slices((filenames, labels))
+    def load_and_preprocess_image(path):
+        image = tf.read_file(path)
+        return _preprocess_image(image)
 
-    return filenames, labels
+    path_ds = tf.data.Dataset.from_tensor_slices(all_image_paths)
+    image_ds = path_ds.map(load_and_preprocess_image, num_parallel_calls=AUTOTUNE)
+    print(image_ds)
+
+    label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(all_image_labels, tf.int64))
+
+    image_label_ds = tf.data.Dataset.zip((image_ds, label_ds))
+
+    return image_label_ds, len(all_image_paths)
 
 def main():
-    filenames, labels = load_files()
-    #data = data.shuffle(1000).repeat().batch(100)
-    print(filenames, labels)
 
-    # Create the Estimator
-    mnist_classifier = tf.estimator.Estimator(
-        model_fn=network.Network.build_network, model_dir="./tmp/audio_conv_model")
+    ds, len_images = load_files()
+    ds = ds.repeat()
+    ds = ds.batch(BATCH_SIZE)
+    ds = ds.prefetch(buffer_size=AUTOTUNE)
+
+    def change_range(image, label):
+        return 2 * image - 1, label
+
+    keras_ds = ds.map(change_range)
 
 
-    # Set up logging for predictions
-    tensors_to_log = {"probabilities": "softmax_tensor"}
+    model = network.build_network()
+    model.compile(optimizer=tf.train.AdamOptimizer(),
+                  loss=tf.keras.losses.sparse_categorical_crossentropy,
+                  metrics=["accuracy"])
+    print(model.summary())
 
-    logging_hook = tf.train.LoggingTensorHook(
-        tensors=tensors_to_log, every_n_iter=50)
+    steps_per_epoch = int(tf.ceil(len_images / BATCH_SIZE).numpy())
 
-    # est =
+    print(len(model.trainable_variables))
+    model.fit(ds, epochs=2, steps_per_epoch=steps_per_epoch)
 
-    # fn = tf.estimator.inputs.numpy_input_fn(x={"x": data}, y=data, batch_size=100, num_epochs=None, shuffle=True)
-    # train_input_fn = fn
-
-    mnist_classifier.train(
-        steps=1000,
-        input_fn=lambda: train_input_fn(filenames, labels)
-    )
 
 if __name__ == "__main__":
     main()
