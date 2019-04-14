@@ -51,21 +51,21 @@ def load_files():
 
     label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(all_image_labels, tf.int64))
 
-    image_label_ds = tf.data.Dataset.zip((image_ds, label_ds))
+    # image_label_ds = tf.data.Dataset.zip((image_ds, label_ds))
 
-    return image_label_ds, len(all_image_paths)
+    return image_ds, label_ds, len(all_image_paths)
 
 def main():
 
-    ds, len_images = load_files()
-    ds = ds.repeat()
-    ds = ds.batch(BATCH_SIZE)
-    ds = ds.prefetch(buffer_size=AUTOTUNE)
+    image_ds, label_ds, len_images = load_files()
+    # ds = ds.repeat()
+    # ds = ds.batch(BATCH_SIZE)
+    # ds = ds.prefetch(buffer_size=AUTOTUNE)
 
-    def change_range(image, label):
-        return 2 * image - 1, label
-
-    keras_ds = ds.map(change_range)
+    # def change_range(image, label):
+    #     return 2 * image - 1, label
+    #
+    # keras_ds = ds.map(change_range)
 
 
     model = network.build_network()
@@ -76,7 +76,29 @@ def main():
 
     steps_per_epoch = int(tf.ceil(len_images / BATCH_SIZE).numpy())
 
-    print(len(model.trainable_variables))
+    #serialise
+    ds = image_ds.map(tf.serialize_tensor)
+    tfrec = tf.data.experimental.TFRecordWriter('images.tfrec')
+    tfrec.write(ds)
+
+    RESTORE_TYPE = image_ds.output_types
+    RESTORE_SHAPE = image_ds.output_shapes
+
+    ds = tf.data.TFRecordDataset('images.tfrec')
+
+    def parse(x):
+        result = tf.parse_tensor(x, out_type=RESTORE_TYPE)
+        result = tf.reshape(result, RESTORE_SHAPE)
+        return result
+
+    ds = ds.map(parse, num_parallel_calls=AUTOTUNE)
+
+    ds = tf.data.Dataset.zip((ds, label_ds))
+    ds = ds.apply(
+        tf.data.experimental.shuffle_and_repeat(buffer_size=image_count))
+    ds = ds.batch(BATCH_SIZE).prefetch(AUTOTUNE)
+    
+
     model.fit(ds, epochs=2, steps_per_epoch=steps_per_epoch)
 
 
