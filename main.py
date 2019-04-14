@@ -3,7 +3,7 @@ from __future__ import absolute_import, division, print_function
 import tensorflow as tf
 import os
 import network
-import numpy as np
+import sys
 import pathlib
 import random
 
@@ -14,7 +14,7 @@ tf.enable_eager_execution()
 BATCH_SIZE = 32
 
 
-data_root = pathlib.Path("./data")
+data_root = pathlib.Path(sys.argv[1])
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 def load_files():
@@ -42,7 +42,7 @@ def load_files():
         return image
 
     def load_and_preprocess_image(path):
-        image = tf.read_file(path)
+        image = tf.read_file(str(path))
         return _preprocess_image(image)
 
     path_ds = tf.data.Dataset.from_tensor_slices(all_image_paths)
@@ -67,7 +67,7 @@ def main():
     #
     # keras_ds = ds.map(change_range)
 
-
+    print("len_images ", len_images)
     model = network.build_network()
     model.compile(optimizer=tf.train.AdamOptimizer(),
                   loss=tf.keras.losses.sparse_categorical_crossentropy,
