@@ -5,7 +5,7 @@ import os
 import network
 import sys
 import pathlib
-import random
+from keras.backend.tensorflow_backend import set_session
 
 tf.logging.set_verbosity(tf.logging.INFO)
 tf.enable_eager_execution()
@@ -67,6 +67,12 @@ def main():
                   loss=tf.keras.losses.sparse_categorical_crossentropy,
                   metrics=["accuracy"])
     print(model.summary())
+
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
+    config.log_device_placement = True
+    sess = tf.Session(config=config)
+    set_session(sess)
 
     steps_per_epoch = int(tf.ceil(len_images / BATCH_SIZE).numpy())
 
