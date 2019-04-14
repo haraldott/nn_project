@@ -78,8 +78,10 @@ def main():
 
     #serialise
     ds = image_ds.map(tf.serialize_tensor)
-    tfrec = tf.data.experimental.TFRecordWriter('images.tfrec')
-    tfrec.write(ds)
+    if not os.path.isfile('images.tfrec'):
+        tfrec = tf.data.experimental.TFRecordWriter('images.tfrec')
+        tfrec.write(ds)
+
 
     RESTORE_TYPE = image_ds.output_types
     RESTORE_SHAPE = image_ds.output_shapes
@@ -95,9 +97,9 @@ def main():
 
     ds = tf.data.Dataset.zip((ds, label_ds))
     ds = ds.apply(
-        tf.data.experimental.shuffle_and_repeat(buffer_size=image_count))
+        tf.data.experimental.shuffle_and_repeat(buffer_size=len_images))
     ds = ds.batch(BATCH_SIZE).prefetch(AUTOTUNE)
-    
+
 
     model.fit(ds, epochs=2, steps_per_epoch=steps_per_epoch)
 
