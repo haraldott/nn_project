@@ -18,9 +18,9 @@ def build_network():
         tf.keras.layers.Conv2D(filters=80, kernel_size=[1, 3], activation=tf.nn.relu),
         tf.keras.layers.MaxPooling2D(pool_size=[1, 3], strides=[1, 3]),
         tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Dense(units=5000, activation=tf.nn.relu),
+        tf.keras.layers.Dense(units=1000, activation=tf.nn.relu),
         tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Dense(units=5000),
+        tf.keras.layers.Dense(units=1000),
         tf.keras.layers.Dense(units=6, activation=tf.nn.softmax)
     ])
     return model
