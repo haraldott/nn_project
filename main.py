@@ -22,17 +22,21 @@ AUTOTUNE = tf.data.experimental.AUTOTUNE
 def build_network():
 
     model = tf.keras.Sequential([
-        tf.keras.layers.Conv2D(input_shape=(140, 140, 3), filters=80, kernel_size=[11, 11], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[4, 3], strides=[4, 4]),
+        tf.keras.layers.Conv2D(input_shape=(480, 480, 3), filters=80, kernel_size=[9, 9], activation=tf.nn.relu),
+        tf.keras.layers.MaxPooling2D(pool_size=[4, 4], strides=[4, 4]),
         tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Conv2D(filters=80, kernel_size=[10, 10], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[2, 3], strides=[2, 2]),
+        tf.keras.layers.Conv2D(filters=80, kernel_size=[8, 8], activation=tf.nn.relu),
+        tf.keras.layers.MaxPooling2D(pool_size=[3, 3], strides=[3, 3]),
         tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Conv2D(filters=80, kernel_size=[9, 9], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[2, 3], strides=[2, 2]),
-        tf.keras.layers.Dense(units=2000, activation=tf.nn.relu),
+        tf.keras.layers.Conv2D(filters=80, kernel_size=[7, 7], activation=tf.nn.relu),
+        tf.keras.layers.MaxPooling2D(pool_size=[2, 2], strides=[2, 2]),
+        tf.keras.layers.Conv2D(filters=80, kernel_size=[6, 6], activation=tf.nn.relu),
+        tf.keras.layers.MaxPooling2D(pool_size=[2, 2], strides=[2, 2]),
+        tf.keras.layers.Conv2D(filters=80, kernel_size=[4, 4], activation=tf.nn.relu),
+        tf.keras.layers.MaxPooling2D(pool_size=[2, 2], strides=[2, 2]),
+        tf.keras.layers.Dense(units=5000, activation=tf.nn.relu),
         tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Dense(units=2000),
+        tf.keras.layers.Dense(units=5000),
         tf.keras.layers.Dense(units=6, activation=tf.nn.softmax)
     ])
     return model
@@ -58,7 +62,7 @@ def load_files():
 
     def _preprocess_image(image):
         image = tf.image.decode_jpeg(image, channels=3)
-        image = tf.image.resize_images(image, [140, 140])
+        image = tf.image.resize_images(image, [480, 480])
         #image /= 255.0  # normalize to [0,1] range
         return image
 
