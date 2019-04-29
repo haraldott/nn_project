@@ -1,118 +1,57 @@
-from __future__ import absolute_import, division, print_function
-
-import tensorflow as tf
-import os
-import sys
-import random
-import pathlib
-from keras.backend.tensorflow_backend import set_session
+import helper
+import network
 from keras.callbacks import EarlyStopping
+import load_folder
+from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
+import sklearn.model_selection as sk
+import sklearn.metrics
+import pathlib
+from keras.utils import plot_model
 
-tf.logging.set_verbosity(tf.logging.INFO)
-tf.enable_eager_execution()
-
-# HYPERPARAMETERS
-BATCH_SIZE = 6
-
-working_dir = str(sys.argv[1])
-data_root = pathlib.Path(working_dir + "/data")
-AUTOTUNE = tf.data.experimental.AUTOTUNE
+def evaluate(model, x_test, y_test):
+    y_prob = model.predict_proba(x_test, verbose=0)
+    y_pred = y_prob.argmax(axis=-1)
+    y_true = y_test
 
 
-def build_network():
+    conf = sklearn.metrics.confusion_matrix(y_test, y_pred)
+    print("conf:", conf)
 
-    model = tf.keras.Sequential([
-        tf.keras.layers.Conv2D(input_shape=(480, 480, 3), filters=80, kernel_size=[9, 9], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[4, 4], strides=[4, 4]),
-        tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Conv2D(filters=80, kernel_size=[8, 8], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[3, 3], strides=[3, 3]),
-        tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Conv2D(filters=80, kernel_size=[7, 7], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[2, 2], strides=[2, 2]),
-        tf.keras.layers.Conv2D(filters=80, kernel_size=[6, 6], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[2, 2], strides=[2, 2]),
-        tf.keras.layers.Conv2D(filters=80, kernel_size=[4, 4], activation=tf.nn.relu),
-        tf.keras.layers.MaxPooling2D(pool_size=[2, 2], strides=[2, 2]),
-        tf.keras.layers.Dense(units=5000, activation=tf.nn.relu),
-        tf.keras.layers.Dropout(rate=0.5),
-        tf.keras.layers.Dense(units=5000),
-        tf.keras.layers.Dense(units=6, activation=tf.nn.softmax)
-    ])
-    return model
+    label_names = sorted(item.name for item in pathlib.Path("data").glob('*/') if item.is_dir())
+    helper.plot_confusion_matrix(y_test, y_pred, classes=label_names)
 
-earlystop = EarlyStopping(monitor='val_loss', patience=3, verbose=1, mode='auto')
+    score, accuracy = model.evaluate(x_test, y_test, batch_size=32)
+    print("\nAccuracy = {:.2f}".format(accuracy))
 
-def load_files():
+    p, r, f, s = precision_recall_fscore_support(y_true, y_pred, average='micro')
+    print("Precision: ", p)
+    print("Recall: ", r)
+    print("F-Score: ", round(f, 2))
 
-    # get all labels
-    label_names = sorted(item.name for item in data_root.glob('*/') if item.is_dir())
+    plot_model(model, to_file='model.png')
 
-    # assign index to each label
-    label_to_index = dict((name, index) for index, name in enumerate(label_names))
 
-    # get all image paths
-    all_image_paths = list(data_root.glob('*/spectrogram/*'))
-    all_image_paths = [str(path) for path in all_image_paths]
-    random.shuffle(all_image_paths)
+def main ():
+    train = False
+    features, labels = load_folder.load_all_folds("data/processed_data/")
 
-    # create a list of every file and its label index
-    all_image_labels = [label_to_index[pathlib.Path(path).parent.parent.name]
-                        for path in all_image_paths]
+    x_train, x_test, y_train, y_test = sk.train_test_split(features, labels, shuffle=True, train_size=0.8, random_state=42)
 
-    def _preprocess_image(image):
-        image = tf.image.decode_jpeg(image, channels=3)
-        image = tf.image.resize_images(image, [480, 480])
-        #image /= 255.0  # normalize to [0,1] range
-        return image
+    print("Building model...")
+    model = network.build_model()
 
-    def load_and_preprocess_image(path):
-        image = tf.read_file(path)
-        return _preprocess_image(image)
+    # a stopping function to stop training before we excessively overfit to the training set
+    earlystop = EarlyStopping(monitor='val_loss', patience=0, verbose=1, mode='auto')
 
-    path_ds = tf.data.Dataset.from_tensor_slices(all_image_paths)
-    image_ds = path_ds.map(load_and_preprocess_image, num_parallel_calls=AUTOTUNE)
+    if train:
+        print("Training model...")
+        model.fit(x_train, y_train, validation_data=(x_test, y_test), callbacks=[earlystop], batch_size=20, epochs=3)
+        model.save_weights("trained_model")
+    else:
+        model.load_weights("trained_model")
 
-    label_ds = tf.data.Dataset.from_tensor_slices(tf.cast(all_image_labels, tf.int32))
-
-    image_label_ds = tf.data.Dataset.zip((image_ds, label_ds))
-
-    return image_label_ds, len(all_image_paths)
-
-def main():
-
-    ds, len_images = load_files()
-    ds = ds.repeat()
-    ds = ds.batch(BATCH_SIZE)
-    ds = ds.prefetch(buffer_size=AUTOTUNE)
-
-    model = build_network()
-    model.compile(optimizer=tf.train.AdamOptimizer(),
-                  loss=tf.keras.losses.sparse_categorical_crossentropy,
-                  metrics=["accuracy"])
-    print(model.summary())
-
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
-    config.log_device_placement = True
-    sess = tf.Session(config=config)
-    set_session(sess)
-
-    steps_per_epoch = int(tf.ceil(len_images / BATCH_SIZE).numpy())
-
-    model.fit(ds, epochs=2, steps_per_epoch=steps_per_epoch)
-    scores = model.evaluate(ds, verbose=0, steps=BATCH_SIZE)
-    print("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
-
-    # serialize model to JSON
-    model_json = model.to_json()
-    with open(working_dir + "model.json", "w") as json_file:
-        json_file.write(model_json)
-    # serialize weights to HDF5
-    model.save_weights(working_dir + "model.h5")
-    print("Saved model to disk")
-
+    print("Evaluating model...")
+    evaluate(model, x_test, y_test)
 
 if __name__ == "__main__":
     main()
-

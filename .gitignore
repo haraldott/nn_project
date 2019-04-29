@@ -1,0 +1,10 @@
+full_data_backup/
+processed_data_backup/
+venv/
+__pycache__/
+data.ipynb
+.idea/
+.ipynb_checkpoints
+trained_model
+data/processed_data
+data/
